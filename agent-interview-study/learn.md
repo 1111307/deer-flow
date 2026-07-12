@@ -5,6 +5,7 @@
 > **逐行精读版**：本文件是速查/总览性质的学习指南。更细致的"逐行代码精读"笔记（打开真实源码、一行一行讲为什么这么写、换一种写法会在哪里炸）单独存放在同目录下，按模块编号：
 > - [01-state-and-middleware.md](01-state-and-middleware.md) —— Agent 状态管理（`ThreadState` / reducer）+ Middleware 责任链组装
 > - [02-loop-detection-and-safety.md](02-loop-detection-and-safety.md) —— 循环检测（LoopDetectionMiddleware）+ 安全兜底（SafetyFinishReasonMiddleware）
+> - [03-dangling-tool-call.md](03-dangling-tool-call.md) —— Dangling Tool Call 消息补偿（DanglingToolCallMiddleware）
 
 ---
 
