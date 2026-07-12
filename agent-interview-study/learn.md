@@ -6,6 +6,7 @@
 > - [01-state-and-middleware.md](01-state-and-middleware.md) —— Agent 状态管理（`ThreadState` / reducer）+ Middleware 责任链组装
 > - [02-loop-detection-and-safety.md](02-loop-detection-and-safety.md) —— 循环检测（LoopDetectionMiddleware）+ 安全兜底（SafetyFinishReasonMiddleware）
 > - [03-dangling-tool-call.md](03-dangling-tool-call.md) —— Dangling Tool Call 消息补偿（DanglingToolCallMiddleware）
+> - [04-deferred-tool-binding.md](04-deferred-tool-binding.md) —— 延迟工具绑定（tool_search + DeferredToolFilterMiddleware）
 
 ---
 
