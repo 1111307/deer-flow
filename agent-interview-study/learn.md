@@ -10,6 +10,7 @@
 > - [05-subagent-delegation.md](05-subagent-delegation.md) —— Sub-Agent 多智能体委派（task_tool + SubagentExecutor + registry）
 > - [06-sandbox-execution.md](06-sandbox-execution.md) —— Sandbox 执行环境与安全（抽象接口/Provider 模式 + 虚拟路径三层防御 + LocalSandboxProvider LRU 缓存 + AioSandboxProvider Docker 生命周期编排 + host bash 安全开关）
 > - [07-context-engineering.md](07-context-engineering.md) —— Context Engineering：摘要与预算控制（DeerFlowSummarizationMiddleware skill救援/TAG_NOSTREAM + ToolOutputBudgetMiddleware 外部化双路径/便宜预检查 + memory_flush_hook 长期记忆联动 + 中间件装配位置文档落差）
+> - [08-long-term-memory.md](08-long-term-memory.md) —— 长期记忆系统（MemoryUpdateQueue防抖/OR合并 + ContextVar跨线程陷阱 + MemoryUpdater同步/异步分发规避#2615 + fail-closed部分更新防御 + FileMemoryStorage原子写 + format_memory_for_injection真实截断逻辑纠正"top 15 facts"文档误传）
 
 ---
 
