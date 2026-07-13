@@ -8,6 +8,7 @@
 > - [03-dangling-tool-call.md](03-dangling-tool-call.md) —— Dangling Tool Call 消息补偿（DanglingToolCallMiddleware）
 > - [04-deferred-tool-binding.md](04-deferred-tool-binding.md) —— 延迟工具绑定（tool_search + DeferredToolFilterMiddleware）
 > - [05-subagent-delegation.md](05-subagent-delegation.md) —— Sub-Agent 多智能体委派（task_tool + SubagentExecutor + registry）
+> - [06-sandbox-execution.md](06-sandbox-execution.md) —— Sandbox 执行环境与安全（抽象接口/Provider 模式 + 虚拟路径三层防御 + LocalSandboxProvider LRU 缓存 + AioSandboxProvider Docker 生命周期编排 + host bash 安全开关）
 
 ---
 
