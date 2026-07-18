@@ -12,6 +12,8 @@
 > - [07-context-engineering.md](07-context-engineering.md) —— Context Engineering：摘要与预算控制（DeerFlowSummarizationMiddleware skill救援/TAG_NOSTREAM + ToolOutputBudgetMiddleware 外部化双路径/便宜预检查 + memory_flush_hook 长期记忆联动 + 中间件装配位置文档落差）
 > - [08-long-term-memory.md](08-long-term-memory.md) —— 长期记忆系统（MemoryUpdateQueue防抖/OR合并 + ContextVar跨线程陷阱 + MemoryUpdater同步/异步分发规避#2615 + fail-closed部分更新防御 + FileMemoryStorage原子写 + format_memory_for_injection真实截断逻辑纠正"top 15 facts"文档误传）
 > - [09-mcp-integration.md](09-mcp-integration.md) —— MCP 协议集成（client.py配置翻译层 + cache.py懒加载/mtime失效/三分支同步入口 + oauth.py双检锁主动续期 + session_pool.py anyio同任务栈约束/owner-task模式/四阶段get_session/LRU淘汰/四级关闭自死锁规避#3379 + tools.py stdio会话池化选择#3203/cwd·TMPDIR钉住/虚拟路径两层匹配/拦截器链闭包陷阱/user_id:thread_id跨用户隔离 + 三处"检测运行循环"模式为何不抽公共函数 + 文档系统性漏掉两个文件的复杂度）
+> - [10-skills-system.md](10-skills-system.md) —— Skills 系统（types public/custom二分 + parser报错行号对齐/allowed-tools三态 + 渐进式加载system prompt只放目录@lru_cache + slash.py保留命令排除 + SkillActivationMiddleware幂等/软链逃逸防御/XML转义/审计哈希 + security_scanner LLM分类+fail-closed兜底 + tool_policy三态白名单合并 + installer zip炸弹/路径穿越/软链/二次校验 + permissions跨UID抹写位 + storage模板方法把校验固化在基类 + skill_manage_tool自演化闸门 + 文档漏掉一半安全边界代码）
+> - [11-model-abstraction.md](11-model-abstraction.md) —— 模型抽象层（__init__只导出create_chat_model + resolve_class反射实例化/能力声明+extra透传 + factory把thinking_enabled一个bool翻译成关思考四分支方言 + 三个LangChain默认值补丁stream_usage/chunk_timeout/deep_merge + provider补丁统一套路重写_get_request_payload/_create_chat_result保留reasoning + assistant_payload_replay共享匹配骨架+字段回调/vLLM未收敛重复 + MiniMax删user name一致性坑2013 + claude_provider OAuth Bearer/prompt caching 4断点/思考预算/重试 + credential_loader多来源+过期检查 + attach_tracing避免双重span + 文档漏掉8个provider补丁的统一模式）
 
 ---
 
