@@ -14,6 +14,7 @@
 > - [09-mcp-integration.md](09-mcp-integration.md) —— MCP 协议集成（client.py配置翻译层 + cache.py懒加载/mtime失效/三分支同步入口 + oauth.py双检锁主动续期 + session_pool.py anyio同任务栈约束/owner-task模式/四阶段get_session/LRU淘汰/四级关闭自死锁规避#3379 + tools.py stdio会话池化选择#3203/cwd·TMPDIR钉住/虚拟路径两层匹配/拦截器链闭包陷阱/user_id:thread_id跨用户隔离 + 三处"检测运行循环"模式为何不抽公共函数 + 文档系统性漏掉两个文件的复杂度）
 > - [10-skills-system.md](10-skills-system.md) —— Skills 系统（types public/custom二分 + parser报错行号对齐/allowed-tools三态 + 渐进式加载system prompt只放目录@lru_cache + slash.py保留命令排除 + SkillActivationMiddleware幂等/软链逃逸防御/XML转义/审计哈希 + security_scanner LLM分类+fail-closed兜底 + tool_policy三态白名单合并 + installer zip炸弹/路径穿越/软链/二次校验 + permissions跨UID抹写位 + storage模板方法把校验固化在基类 + skill_manage_tool自演化闸门 + 文档漏掉一半安全边界代码）
 > - [11-model-abstraction.md](11-model-abstraction.md) —— 模型抽象层（__init__只导出create_chat_model + resolve_class反射实例化/能力声明+extra透传 + factory把thinking_enabled一个bool翻译成关思考四分支方言 + 三个LangChain默认值补丁stream_usage/chunk_timeout/deep_merge + provider补丁统一套路重写_get_request_payload/_create_chat_result保留reasoning + assistant_payload_replay共享匹配骨架+字段回调/vLLM未收敛重复 + MiniMax删user name一致性坑2013 + claude_provider OAuth Bearer/prompt caching 4断点/思考预算/重试 + credential_loader多来源+过期检查 + attach_tracing避免双重span + 文档漏掉8个provider补丁的统一模式）
+> - [12-reliability-practices.md](12-reliability-practices.md) —— 工程可靠性实践（约定即测试的统一思路 + Blockbuster运行时钩子scanned_modules限定业务代码避免假阳性/hookwrapper包setup+call+teardown/回归锚点锁offload/test_gate_smoke元测试守卫者也要被守卫 + test_harness_boundary AST扫import把分层规则变CI gate + reload_boundary单一事实来源注册表+双向漂移检测锁注册表⇄schema一致 + 共同原则把"人易违反/成本高/当下不报错"的约定转成"违反即失败"的确定性检查）
 
 ---
 
