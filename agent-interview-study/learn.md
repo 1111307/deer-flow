@@ -15,6 +15,14 @@
 > - [10-skills-system.md](10-skills-system.md) —— Skills 系统（types public/custom二分 + parser报错行号对齐/allowed-tools三态 + 渐进式加载system prompt只放目录@lru_cache + slash.py保留命令排除 + SkillActivationMiddleware幂等/软链逃逸防御/XML转义/审计哈希 + security_scanner LLM分类+fail-closed兜底 + tool_policy三态白名单合并 + installer zip炸弹/路径穿越/软链/二次校验 + permissions跨UID抹写位 + storage模板方法把校验固化在基类 + skill_manage_tool自演化闸门 + 文档漏掉一半安全边界代码）
 > - [11-model-abstraction.md](11-model-abstraction.md) —— 模型抽象层（__init__只导出create_chat_model + resolve_class反射实例化/能力声明+extra透传 + factory把thinking_enabled一个bool翻译成关思考四分支方言 + 三个LangChain默认值补丁stream_usage/chunk_timeout/deep_merge + provider补丁统一套路重写_get_request_payload/_create_chat_result保留reasoning + assistant_payload_replay共享匹配骨架+字段回调/vLLM未收敛重复 + MiniMax删user name一致性坑2013 + claude_provider OAuth Bearer/prompt caching 4断点/思考预算/重试 + credential_loader多来源+过期检查 + attach_tracing避免双重span + 文档漏掉8个provider补丁的统一模式）
 > - [12-reliability-practices.md](12-reliability-practices.md) —— 工程可靠性实践（约定即测试的统一思路 + Blockbuster运行时钩子scanned_modules限定业务代码避免假阳性/hookwrapper包setup+call+teardown/回归锚点锁offload/test_gate_smoke元测试守卫者也要被守卫 + test_harness_boundary AST扫import把分层规则变CI gate + reload_boundary单一事实来源注册表+双向漂移检测锁注册表⇄schema一致 + 共同原则把"人易违反/成本高/当下不报错"的约定转成"违反即失败"的确定性检查）
+> - [13-sandbox-docker.md](13-sandbox-docker.md) —— 沙箱 Docker 深入（三层抽象Sandbox/Provider/Backend职责分离 + LocalContainerBackend docker run每个坑的处理端口异步重试/容器名冲突adopt/Windows --mount/DooD 0.0.0.0绑定/凭证日志脱敏/macOS Apple Container + AioSandbox HTTP客户端单session锁/ErrorObservation恢复/Fern SDK close链 + AioSandboxProvider warm pool释放≠销毁/replicas软上限/idle checker + 跨进程确定性ID+文件锁防容器名冲突 + 孤儿容器启动reconcile兜底进程崩溃泄漏 + 生命周期澄清"一个thread一个容器复用"而非"每次对话新建" + docker-compose部署拓扑DooD opt-in/单worker约束）
+
+---
+
+## 读者背景说明
+
+- **Go 开发者**：强烈建议先读 [go-developer-guide.md](go-developer-guide.md) —— Python asyncio 和 Go goroutine 在结构上很像但实现机制完全不同（单线程协作式调度 vs 多线程抢占式调度），这份对照文档把前 13 篇里所有"为什么 Python 要这么写"的设计选择（`asyncio.to_thread` 到处都是、两套锁并存、单 worker 部署、Blockbuster 检测）串起来了。
+- **Python 开发者**：可以直接按 01-13 顺序读，遇到并发相关机制如果感觉"这不是显而易见吗"，说明你已经内化了 Python asyncio 的约束。
 
 ---
 
