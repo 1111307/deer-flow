@@ -154,17 +154,108 @@ Python asyncio 在以下场景会明显吃亏:
 
 > Go 的 goroutine 是抢占式调度,可以跑在多个 OS 线程上,真并行,一个 goroutine 阻塞不影响其他。Python 的 coroutine 是协作式调度,所有 coroutine 跑在同一个 OS 线程里,并发不并行,一个 coroutine 调同步阻塞函数会卡死整个事件循环。所以 Python asyncio 代码里到处都是 `asyncio.to_thread`,把阻塞操作扔到线程池,Go 不需要这个,因为 goroutine 天然不怕阻塞。结构上和 Go 的"一个连接一个 goroutine"是同构的,但实现机制和并行能力完全不同。
 
-## 10. 读前 13 篇时遇到不懂的机制,回来查这里
+## 10. 沙箱系统:一个把"Python 并发短板"全踩了一遍的案例
 
-| 前 13 篇里的机制 | 为什么存在 | 对照本文档条目 |
-|---|---|---|
-| 到处都是 `asyncio.to_thread` | 单线程事件循环怕阻塞,必须 offload | §4 |
-| `threading.Lock` 和 `asyncio.Lock` 并存 | 执行单元有两种(coroutine + OS 线程) | §5 |
-| Blockbuster 检测(第 12 篇) | 单线程事件循环一个阻塞全卡死,必须工具强制检查 | §3 |
-| 沙箱 `acquire()` 用 `fcntl.flock` 文件锁 | 多进程共享文件系统,进程间互斥 | §5、§7 |
-| `GATEWAY_WORKERS=1` 默认 | 多进程状态同步麻烦,牺牲多核换一致性 | §7 |
-| `asyncio.shield` 保护文件锁 | coroutine cancel 是强制的,关键段不能中断 | §6 |
+沙箱(第 06、13 篇)是 deer-flow 里**最复杂**的模块,因为它同时面对三个 Go 里不存在的约束:
+
+1. **Python 单线程事件循环怕阻塞** → 所有沙箱操作(acquire/release/execute_command)都要 `asyncio.to_thread` 扔到线程池
+2. **Python 多进程不能共享内存** → 跨进程协调沙箱状态要靠**确定性 ID + 文件锁**,不能靠共享 dict
+3. **Python 多进程启动成本高** → 不能像 Go 那样随便开进程,要 warm pool 复用容器避免冷启动
+
+### 10.1 为什么沙箱代码里 `asyncio.to_thread` 到处都是
+
+打开 [aio_sandbox_provider.py](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py),你会看到几乎所有方法都是 `await asyncio.to_thread(...)`:
+
+```python
+# 第 777 行
+await asyncio.to_thread(_lock_file_exclusive, lock_file)
+
+# 第 787 行
+discovered = await asyncio.to_thread(self._backend.discover, sandbox_id)
+
+# 第 859 行
+info = await asyncio.to_thread(self._backend.create, thread_id, sandbox_id, ...)
+```
+
+**为什么**:沙箱的所有操作都是**同步阻塞**的:
+- `fcntl.flock` 文件锁 → 阻塞等锁
+- `subprocess.run(["docker", "run", ...])` → 阻塞等容器启动(几秒)
+- `requests.get("http://localhost:8080/v1/sandbox")` → 阻塞等 HTTP 响应
+
+这些操作如果在事件循环线程里直接调,会把整个进程卡死(§3)。所以必须 `asyncio.to_thread` 扔到后台线程池,事件循环线程继续跑别的 coroutine,等线程池里的操作做完了再回来拿结果。
+
+**Go 对比**:Go 里你直接 `conn.Exec(...)` 或 `exec.Command(...)` 就行,goroutine 阻塞了 runtime 会切换 OS 线程,其他请求不受影响。Python 没有这个调度器,必须显式把阻塞操作扔到线程池。
+
+### 10.2 为什么用 `threading.Lock` 文件锁而不是 `asyncio.Lock`
+
+[aio_sandbox_provider.py:56-71](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L56-L71) 用的是 `fcntl.flock`(Linux/macOS)或 `msvcrt.locking`(Windows),在 `~/.deer-flow/threads/{thread_id}/{sandbox_id}.lock` 文件上加排他锁。
+
+**为什么不用 `asyncio.Lock`**:
+- `asyncio.Lock` 只在**同一个事件循环内**有效(§5),不能跨进程
+- 沙箱的痛点是**多进程**(gateway 进程 + langgraph worker 进程)同时 acquire 同一个 thread 的沙箱,需要**进程间互斥**
+- 文件锁是 OS 提供的进程间同步原语,任何进程都能锁住同一个文件
+
+**Go 对比**:Go 单进程多 goroutine,用 `sync.Mutex` 就够了。Python 多进程,进程间不能共享内存,只能用文件锁这种 OS 级机制。
+
+**为什么还要 `threading.Lock`**:[aio_sandbox_provider.py:133](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L133) 里还有一个 `self._lock = threading.Lock()`,这是保护**进程内**的 `_sandboxes` dict(多个线程都要读写这个 dict,需要进程内互斥)。
+
+所以沙箱代码里**两套锁并存**:
+- `threading.Lock` → 进程内多线程互斥(§5)
+- `fcntl.flock` 文件锁 → 进程间互斥(§7)
+
+Go 只需要一个 `sync.Mutex`,因为 goroutine 都在同一个进程里。
+
+### 10.3 为什么要 warm pool 复用容器
+
+[aio_sandbox_provider.py:883-922](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L883-L922) 的 `release()` **不销毁容器**,把它放进 `_warm_pool`,下一次 `acquire` 同一个 thread 时直接复用。
+
+**为什么**:
+- Docker 容器冷启动慢(拉镜像、起进程、挂载卷,几秒到十几秒)
+- Python 不能像 Go 那样"随便开进程"(启动成本高,每个进程要加载解释器、初始化连接池)
+- 所以要**尽量复用**已经起好的容器,warm pool 就是为了避免"每次请求都 docker run"
+
+**Go 对比**:Go 里你可以随时 `go func() { ... }()` 起一个新 goroutine,成本极低(KB 级栈)。Python 里"起一个新沙箱容器"是很重的操作,所以要 warm pool 缓存。
+
+### 10.4 为什么默认单 worker 部署
+
+[docker-compose.yaml:81](../docker/docker-compose.yaml#L81) 默认 `GATEWAY_WORKERS=1`,注释里明说"多 worker 会破 RunManager/StreamBridge/沙箱状态"。
+
+**为什么**:
+- Python 多进程内存不共享,进程 A 的 `_sandboxes` dict,进程 B 看不到
+- 沙箱的 warm pool、in-process cache、文件锁,全是**进程内**状态
+- 多进程后,要么放弃这些状态(每次请求都 docker run,性能爆炸),要么用 Redis/共享存储重做分布式协调(成本高)
+
+**Go 对比**:Go 单进程多 goroutine,状态在内存里加锁保护就行,天然支持多核。Python 要多核必须多进程,多进程状态同步麻烦,所以 deer-flow 选择单进程,牺牲多核利用率换取状态一致性。
+
+### 10.5 沙箱面试讲法
+
+如果被问"沙箱系统为什么设计得这么复杂",标准答案:
+
+> 沙箱要同时解决三个问题:安全隔离(不能让 agent 代码跑在宿主机)、性能(不能每次请求都 docker run)、并发安全(多进程同时 acquire 同一个 thread 不能起两个容器)。
+>
+> Python 的单线程事件循环和多进程模型让这三个问题都比 Go 难:
+> - 所有阻塞操作(docker run、文件锁、HTTP 调用)必须 `asyncio.to_thread` 扔到线程池,避免卡死事件循环
+> - 跨进程协调要靠确定性 ID(`sha256(thread_id)`)+ 文件锁(`fcntl.flock`),不能靠共享内存
+> - 冷启动成本高,要 warm pool 复用容器,不能随时起新容器
+>
+> Go 里这些问题要么不存在(goroutine 天然不怕阻塞、单进程多 goroutine 共享内存),要么解法更简单(起一个 goroutine 成本极低)。Python 的这些约束是语言层面的,沙箱的复杂度是在这些约束下找最优解的结果。
 
 ---
 
-**总结**:Python asyncio 的并发模型和 Go 在**结构上**很像(都是"一个连接一个执行单元,内部循环"),但在**实现机制**上完全不同——Go 是真并行多线程,Python 是单线程协作式调度。理解这个核心差异后,前 13 篇里所有"为什么这么做"的设计选择(大量 `to_thread`、两套锁、单 worker 部署、Blockbuster 检测)都能串起来了。
+**总结**:沙箱是 deer-flow 里把 Python 并发短板(GIL、单线程事件循环、多进程状态不共享)全踩了一遍的模块,所以它的代码里到处是 `asyncio.to_thread`、`threading.Lock`、文件锁、warm pool——这些在 Go 里要么不需要,要么解法简单得多。理解了 §1-§9 的 Python 并发模型,再看沙箱的设计选择,就能明白"为什么这么麻烦"。
+
+---
+
+## 11. 读前 13 篇时遇到不懂的机制,回来查这里
+
+| 前 13 篇里的机制 | 为什么存在 | 对照本文档条目 |
+|---|---|---|
+| 到处都是 `asyncio.to_thread` | 单线程事件循环怕阻塞,必须 offload | §4、§10.1 |
+| `threading.Lock` 和 `asyncio.Lock` 并存 | 执行单元有两种(coroutine + OS 线程) | §5、§10.2 |
+| Blockbuster 检测(第 12 篇) | 单线程事件循环一个阻塞全卡死,必须工具强制检查 | §3 |
+| 沙箱 `acquire()` 用 `fcntl.flock` 文件锁 | 多进程共享文件系统,进程间互斥 | §5、§7、§10.2 |
+| `GATEWAY_WORKERS=1` 默认 | 多进程状态同步麻烦,牺牲多核换一致性 | §7、§10.4 |
+| `asyncio.shield` 保护文件锁 | coroutine cancel 是强制的,关键段不能中断 | §6 |
+| 沙箱 warm pool 复用容器 | Python 进程启动成本高,要避免冷启动 | §10.3 |
+
+**总结**:Python asyncio 的并发模型和 Go 在**结构上**很像(都是"一个连接一个执行单元,内部循环"),但在**实现机制**上完全不同——Go 是真并行多线程,Python 是单线程协作式调度。理解这个核心差异后,前 13 篇里所有"为什么这么做"的设计选择(大量 `to_thread`、两套锁、单 worker 部署、Blockbuster 检测、沙箱 warm pool)都能串起来了。
