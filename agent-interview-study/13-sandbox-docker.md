@@ -142,14 +142,109 @@ Thread 静默 10 分钟 → idle checker 发现超时 → docker stop (容器销
 - `GATEWAY_WORKERS` 默认 1(L81),注释明确说多 worker 会破,因为 RunManager/StreamBridge 是 in-process singleton,而且 sandbox 的 `_thread_sandboxes` 也是 in-process 的 —— 这解释了为什么 `_reconcile_orphans` 和文件锁是必要的:多进程场景下要么靠 K8s provisioner(RemoteSandboxBackend),要么靠这套跨进程兜底机制。
 - `DEER_FLOW_SANDBOX_HOST=host.docker.internal`(L111) —— DooD 场景下容器里的 agent 通过宿主机 docker daemon 起的兄弟容器,访问入口要走 `host.docker.internal` 而不是 `localhost`,这和 `_resolve_docker_bind_host` 绑 `0.0.0.0` 是配套的。
 
-## 8. 值得记住的设计判断(面试可以直接用)
+## 8. 常见误解澄清(面试高频追问)
+
+### 8.1 Warm pool 不是线程池
+
+**Warm pool 和线程池是两个完全不同的东西**,名字里都有"pool"但缓存的资源完全不同:
+
+| | Warm Pool | 线程池 (ThreadPoolExecutor) |
+|---|---|---|
+| **缓存什么** | Docker 容器(正在运行的进程) | OS 线程 |
+| **为什么存在** | 避免 Docker 冷启动(几秒) | 避免频繁创建/销毁线程(几毫秒) |
+| **容量** | 默认 3 个容器 | 默认 4-32 个线程 |
+| **生命周期** | 10 分钟 idle timeout | 进程退出才销毁 |
+| **在哪一层** | 沙箱 provider 的业务逻辑 | Python asyncio 的基础设施 |
+
+**Warm pool** 就是一个 dict,缓存的是**还在运行的 Docker 容器**的连接信息(`SandboxInfo`),容器真的在跑(`docker ps` 能看到),只是当前没有请求在用它。
+
+**线程池**是 `concurrent.futures.ThreadPoolExecutor`,预先创建一批 OS 线程,`asyncio.to_thread` 把阻塞操作扔到池子里的某个线程跑。
+
+在沙箱代码里两者并存:
+```python
+# 线程池:给 asyncio.to_thread 用([aio_sandbox_provider.py:52](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L52))
+_THREAD_LOCK_EXECUTOR = ThreadPoolExecutor(max_workers=32, ...)
+
+# Warm pool:缓存 Docker 容器([aio_sandbox_provider.py:143](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L143))
+self._warm_pool: dict[str, tuple[SandboxInfo, float]] = {}
+```
+
+### 8.2 Warm pool 到底是什么
+
+**Warm pool 是"已经不用了但还没销毁、随时能快速拿回来用的容器池"** —— 一个 LRU 缓存层,放在"正在用的容器"和"彻底销毁"之间。
+
+三种状态:
+```
+状态 1: Active (正在用)
+  _sandboxes = {"x7f3a9b2": AioSandbox(...)}
+  ↑ 用户正在对话,agent 正在执行命令
+
+状态 2: Warm Pool (闲置但没销毁)
+  _warm_pool = {"x7f3a9b2": (SandboxInfo(...), 1690000000.0)}
+  ↑ 对话结束了,但容器还在跑,下次直接用
+
+状态 3: Destroyed (彻底没了)
+  (容器被 docker stop,什么都不剩)
+```
+
+**为什么叫 "warm"**:
+- **Cold(冷)**:从零开始,`docker run` 一个新容器,要拉镜像、起进程、挂载卷,**几秒到十几秒**
+- **Warm(温)**:容器已经起好了,进程在跑,卷已挂载,**直接用,毫秒级**
+
+**容器怎么进 warm pool**:`release()` 被调用时([aio_sandbox_provider.py:883-922](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L883-L922)),从 `_sandboxes` 挪到 `_warm_pool`,**不执行 `docker stop`**,容器还在跑。
+
+**容器怎么从 warm pool 出来**:下一次同一个 thread 的请求来了,`acquire()` 查 warm pool([aio_sandbox_provider.py:499-532](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L499-L532)),直接从 warm pool 拿出来,**不需要 `docker run`**,毫秒级返回。
+
+**容器怎么从 warm pool 被销毁**:
+1. **Idle timeout**(默认 600 秒):后台 `_idle_checker_loop` 每 60 秒扫一次,超时的销毁
+2. **Warm pool 满了**(默认 3 个):新的容器 release 时,最老的被驱逐
+3. **进程 shutdown**:退出时全部销毁
+
+### 8.3 replicas=3 不是"只能有 3 个容器"
+
+**这是最容易误解的地方**:`replicas=3` 不是"总容器数的上限",是"warm pool 最多保留 3 个闲置容器"。**正在用的(active)容器不受这个限制**。
+
+代码证据([aio_sandbox_provider.py:627-632](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L627-L632)):
+```python
+def _replica_count(self) -> tuple[int, int]:
+    replicas = self._config.get("replicas", DEFAULT_REPLICAS)  # 默认 3
+    total = len(self._sandboxes) + len(self._warm_pool)  # active + warm
+    return replicas, total
+```
+
+驱逐逻辑([aio_sandbox_provider.py:834-837](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L834-L837)):
+```python
+if total >= replicas:
+    evicted = self._evict_oldest_warm()  # 只驱逐 warm 的
+```
+
+**只驱逐 warm pool 里的,不驱逐 active 的**。注释明确说([aio_sandbox_provider.py:640-643](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L640-L643)):
+
+> The replicas limit is a soft cap; we never forcibly stop a container that is actively serving a thread.
+
+**实际场景**:
+
+- **5 个用户同时对话** → 5 个 active 容器都在跑,replicas=3 只是触发 warning 日志,不影响创建
+- **5 个用户对话结束都 release** → warm pool 只能留 3 个,最老的 2 个被销毁
+- **第 1 个用户又回来了** → warm pool 里的容器已被驱逐,要重新 `docker run` 冷启动
+
+**为什么默认 3**:资源 vs 性能的权衡。太大浪费内存/CPU,太小命中率低、用户回来经常冷启动。3 是经验值,假设同时活跃用户不超过 3 个。
+
+## 9. 值得记住的设计判断(面试可以直接用)
 
 1. **Warm pool 是"释放 ≠ 销毁"**:release 把容器留在原地,靠 idle timeout 回收,平衡了冷启动延迟和资源占用。
-2. **"LocalSandbox 不算沙箱"是明确写出来的**:`security.py` 里默认禁用 host bash,因为它不构成安全边界 —— 这是对"沙箱"这个词的严谨定义。
-3. **跨进程靠确定性 ID + 文件锁,不靠共享内存**:多进程/多 pod 场景下,`sha256(thread_id)[:8]` 让所有进程算出同一个容器名,文件锁序列化创建过程 —— 这是"无共享状态"的分布式协调。
-4. **docker 层的每个坑都有对应处理**:端口异步释放(重试)、容器名冲突(adopt)、Windows 路径(`--mount`)、DooD 路径转换(host path)、凭证进日志(redact)、macOS runtime 切换 —— 这些都不是理论,是踩过的坑。
-5. **三层抽象(Sandbox/Provider/Backend)职责清晰**:使用方不用关心沙箱是本地子进程还是 HTTP 容器,提供方不用关心容器是 docker 起还是 K8s 起 —— 每层可以独立替换。
+2. **replicas 是 warm pool 容量,不是总容器数上限**:active 容器不受限制,只驱逐闲置的 —— 这是"资源占用"和"可用性"的权衡,不是硬限制。
+3. **"LocalSandbox 不算沙箱"是明确写出来的**:`security.py` 里默认禁用 host bash,因为它不构成安全边界 —— 这是对"沙箱"这个词的严谨定义。
+4. **跨进程靠确定性 ID + 文件锁,不靠共享内存**:多进程/多 pod 场景下,`sha256(thread_id)[:8]` 让所有进程算出同一个容器名,文件锁序列化创建过程 —— 这是"无共享状态"的分布式协调。
+5. **docker 层的每个坑都有对应处理**:端口异步释放(重试)、容器名冲突(adopt)、Windows 路径(`--mount`)、DooD 路径转换(host path)、凭证进日志(redact)、macOS runtime 切换 —— 这些都不是理论,是踩过的坑。
+6. **三层抽象(Sandbox/Provider/Backend)职责清晰**:使用方不用关心沙箱是本地子进程还是 HTTP 容器,提供方不用关心容器是 docker 起还是 K8s 起 —— 每层可以独立替换。
 
-## 9. 小结
+## 10. 小结
 
 沙箱 Docker 在 deer-flow 里不是一个"跑个 docker 命令"的简单功能,而是一套**围绕容器生命周期的工程系统**:三层抽象隔离关注点、warm pool 优化冷启动、确定性 ID + 文件锁实现跨进程协调、孤儿回收兜底资源泄漏、部署拓扑用 docker-compose 表达 DooD/单 worker 约束。面试里讲这一块,重点不是"用了 docker",而是"在分布式、多进程、有状态、有安全约束的场景下,怎么把 docker 容器当成一种需要精细管理的资源"。
+
+**核心要点**:
+- Warm pool 是 LRU 缓存,缓存的是**正在运行的 Docker 容器**,不是线程
+- `replicas` 是 warm pool 容量(默认 3),不是总容器数上限 —— active 容器不受限制
+- "一个用户对话一个 docker" 是对的,但对话结束后容器进 warm pool,不是立刻销毁
+- 三种销毁时机:idle timeout(10 分钟)、warm pool 满了(LRU 驱逐)、进程 shutdown

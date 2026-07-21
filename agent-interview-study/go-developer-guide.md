@@ -209,7 +209,15 @@ Go 只需要一个 `sync.Mutex`,因为 goroutine 都在同一个进程里。
 
 [aio_sandbox_provider.py:883-922](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L883-L922) 的 `release()` **不销毁容器**,把它放进 `_warm_pool`,下一次 `acquire` 同一个 thread 时直接复用。
 
-**为什么**:
+**Warm pool 是什么**:一个 dict,缓存**还在运行的 Docker 容器**的连接信息,容器真的在跑(`docker ps` 能看到),只是当前没有请求在用它。
+
+**Warm pool vs 线程池**(容易混淆):
+- **Warm pool** 缓存 Docker 容器(正在运行的进程),默认 3 个,10 分钟 idle timeout
+- **线程池**(`ThreadPoolExecutor`)缓存 OS 线程,默认 4-32 个,进程退出才销毁
+
+**replicas=3 的真实含义**:**不是"只能有 3 个容器",是"warm pool 最多保留 3 个闲置容器"**。正在用的(active)容器不受限制——10 个用户同时对话就起 10 个容器,replicas 只限制 release 后 warm pool 留几个。代码注释明确说([aio_sandbox_provider.py:640-643](../backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py#L640-L643)):"The replicas limit is a soft cap; we never forcibly stop a container that is actively serving a thread"。
+
+**为什么需要 warm pool**:
 - Docker 容器冷启动慢(拉镜像、起进程、挂载卷,几秒到十几秒)
 - Python 不能像 Go 那样"随便开进程"(启动成本高,每个进程要加载解释器、初始化连接池)
 - 所以要**尽量复用**已经起好的容器,warm pool 就是为了避免"每次请求都 docker run"
@@ -256,6 +264,6 @@ Go 只需要一个 `sync.Mutex`,因为 goroutine 都在同一个进程里。
 | 沙箱 `acquire()` 用 `fcntl.flock` 文件锁 | 多进程共享文件系统,进程间互斥 | §5、§7、§10.2 |
 | `GATEWAY_WORKERS=1` 默认 | 多进程状态同步麻烦,牺牲多核换一致性 | §7、§10.4 |
 | `asyncio.shield` 保护文件锁 | coroutine cancel 是强制的,关键段不能中断 | §6 |
-| 沙箱 warm pool 复用容器 | Python 进程启动成本高,要避免冷启动 | §10.3 |
+| 沙箱 warm pool 复用容器 | Python 进程启动成本高,要避免冷启动;warm pool 是缓存容器不是线程池,replicas 是 warm pool 容量不是总上限 | §10.3 |
 
 **总结**:Python asyncio 的并发模型和 Go 在**结构上**很像(都是"一个连接一个执行单元,内部循环"),但在**实现机制**上完全不同——Go 是真并行多线程,Python 是单线程协作式调度。理解这个核心差异后,前 13 篇里所有"为什么这么做"的设计选择(大量 `to_thread`、两套锁、单 worker 部署、Blockbuster 检测、沙箱 warm pool)都能串起来了。
