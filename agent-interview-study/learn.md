@@ -41,6 +41,12 @@
 
 ---
 
+## 概念补充（外部知识体系，非源码精读）
+
+> - [concept-ai-evaluation.md](concept-ai-evaluation.md) —— AI/Agent 评测体系（为什么 agent 评测难没有标准答案 + Langfuse 整体框架图四大块共享数据底座 + 数据模型关系图Session→Trace→Observation树/Score胶水挂任意层 + 评估闭环九步链路离线experiment→线上judge→bad case回流dataset + 链路分析一judge线上打分rubric四要素组装/三种score类型/三种挂载点 + 链路分析二experiment离线回归按item对比不只看平均分 + 链路分析三人工annotation校准judge一致性检验 + 链路分析四deer-flow接入graph根回调是评测第一公里 + 评测工具全景langfuse 31.6k/promptfoo 23.5k/deepeval 17k/ragas 15k + 面试五问三层+闭环结构）
+
+---
+
 ## 读者背景说明
 
 - **Go 开发者**：强烈建议先读 [go-developer-guide.md](go-developer-guide.md) —— Python asyncio 和 Go goroutine 在结构上很像但实现机制完全不同（单线程协作式调度 vs 多线程抢占式调度），这份对照文档把前 13 篇里所有"为什么 Python 要这么写"的设计选择（`asyncio.to_thread` 到处都是、两套锁并存、单 worker 部署、Blockbuster 检测）串起来了。
