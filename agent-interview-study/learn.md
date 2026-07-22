@@ -20,6 +20,27 @@
 
 ---
 
+## 面试问题链（QA 题库，372 问）
+
+> 按"大厂面试追问链"组织：每条问题链从基础问题开始，层层追问到实现细节、设计权衡、异常边界，附 ASCII 链路图和精确行号引用。深读笔记（01-14）讲"怎么实现"，问题链讲"怎么被问、怎么答"。全部 15 篇均由 agent 通读对应模块**全部源码**后撰写，行号引用经第二轮校验 agent 抽查核对。
+> - [qa-01-agent-loop-and-state.md](qa-01-agent-loop-and-state.md) —— Agent 主循环与状态管理（7 链 22 问：LangGraph 图模型选型/5 个自定义 reducer/19 组件 middleware 链装配顺序与 after_model 反向 dispatch/静态 prompt+prefix cache/runtime configurable/tracing 回调挂 graph 根 INVARIANT）
+> - [qa-02-safety-middlewares.md](qa-02-safety-middlewares.md) —— 安全中间件（7 链 25 问：循环检测 hash/frequency 两层+优雅降级/safety finish reason 截断 tool_calls/dangling 补偿/LLM 错误分类重试 vs 工具错误转 ToolMessage/ClarificationMiddleware Command(goto=END) 殿后）
+> - [qa-03-tools-deferred-binding.md](qa-03-tools-deferred-binding.md) —— 工具体系与延迟绑定（8 链 25 问：get_available_tools 四来源/tool_search 省 context/hash-scoped per-thread promotion+merge_promoted/两道闸/fail-closed 三路径一致/sync wrapper 线程池）
+> - [qa-04-subagents.md](qa-04-subagents.md) —— Sub-Agent 委派（8 链 25 问：task_tool 后台执行+轮询/持久隔离 event loop 线程模型/Limit 中间件截断强制 MAX=3/status_contract/token 按位置合并/checkpointer=False/1800s+372 轮询+max_turns=150 三层治理/disallowed_tools 防递归）
+> - [qa-05-sandbox.md](qa-05-sandbox.md) —— Sandbox 执行环境与安全（8 链 25 问：三层抽象/PathMapping 正反向解析/工具安全流水线/warm pool/确定性 ID+文件锁/孤儿 reconcile/docker run 细节/replicas=3 软上限/DooD/默认禁 host bash）
+> - [qa-06-context-engineering.md](qa-06-context-engineering.md) —— Context Engineering（8 链 25 问：summarization 三维触发/TAG_NOSTREAM/skill 救援三层预算/tool output 外部化 12000 字符/tiktoken+CJK 双轨计数/memory_flush_hook 联动）
+> - [qa-07-memory.md](qa-07-memory.md) —— 长期记忆（8 链 25 问：防抖队列 30s+user_id 捕获防 ContextVar 陷阱/LLM 事实抽取去重/原子写+fail-closed/注入预算 2000 tokens+0.7 置信度/per-user 隔离迁移）
+> - [qa-08-mcp.md](qa-08-mcp.md) —— MCP 协议集成（8 链 25 问：配置翻译/mtime 缓存失效/OAuth 双检锁续期/session pool anyio 同任务约束+owner-task+四级关闭/stdio 池化#3203/虚拟路径两层翻译/拦截器链闭包陷阱）
+> - [qa-09-skills.md](qa-09-skills.md) —— Skills 系统（8 链 25 问：渐进式加载+@lru_cache/slash 激活与保留命令/Activation 幂等+软链逃逸防御/security scanner fail-closed/tool_policy 三态/installer zip 炸弹 512MB/storage 模板方法/自演化闸门）
+> - [qa-10-models.md](qa-10-models.md) —— 模型抽象层（7 链 25 问：create_chat_model 反射+extra 透传/关思考四分支方言/三个 LangChain 默认值补丁/provider 补丁统一模式保留 reasoning/vLLM 重复代码/Claude OAuth+prompt caching 4 断点/MiniMax error 2013/attach_tracing 防双 span）
+> - [qa-11-gateway-runtime.md](qa-11-gateway-runtime.md) —— Gateway 与运行时🆕（8 链 25 问：HTTP→RunManager→LangGraph→SSE 全链路/on_disconnect 断连语义/cancel 内存态 vs 水合 409/multitask_strategy interrupt/rollback/wait 为何不裸 await#3265/auth+CSRF+internal 三层/GATEWAY_WORKERS=1 原因）
+> - [qa-12-persistence-migrations.md](qa-12-persistence-migrations.md) —— 持久化与 Schema 迁移🆕（8 链 25 问：混合 bootstrap 三分支/legacy 先 create_all 再 stamp 否则后加基线表永不建/_BASELINE_TABLE_NAMES 守卫/pg_advisory_lock vs SQLite busy_timeout/checkpointer 表过滤/safe_add_column 幂等）
+> - [qa-13-channels.md](qa-13-channels.md) —— IM Channels 多平台接入🆕（8 链 25 问：MessageBus pub/sub/channel:chat→thread 映射/Feishu 卡片原地 patch vs Telegram editMessageText 节流/DingTalk AI Card/connect code 600s TTL/单 owner 转移 partial unique index/owner-scoped 文件存储）
+> - [qa-14-reliability.md](qa-14-reliability.md) —— 工程可靠性实践（7 链 25 问：Blockbuster scanned_modules 防假阳性/hookwrapper 包 setup+call+teardown/回归锚点/test_gate_smoke 元测试/AST 边界测试/reload_boundary 双向漂移检测）
+> - [qa-15-observability-guardrails-misc.md](qa-15-observability-guardrails-misc.md) —— 可观测/护栏/上传/社区工具/反射/配置🆕（8 链 25 问：Langfuse/LangSmith 双挂载+graph 根回调/trace metadata 映射/guardrails 三 provider deny 转 ToolMessage/uploads 转换流水线/community tools 统一模式/resolve_class 风险/config 热重载边界）
+
+---
+
 ## 读者背景说明
 
 - **Go 开发者**：强烈建议先读 [go-developer-guide.md](go-developer-guide.md) —— Python asyncio 和 Go goroutine 在结构上很像但实现机制完全不同（单线程协作式调度 vs 多线程抢占式调度），这份对照文档把前 13 篇里所有"为什么 Python 要这么写"的设计选择（`asyncio.to_thread` 到处都是、两套锁并存、单 worker 部署、Blockbuster 检测）串起来了。

@@ -9,7 +9,7 @@
 
 **参考回答**:系统分三层:
 
-- 第一层 `Sandbox` 抽象类定义 Agent 可见的能力面:`execute_command`、`read_file`、`write_file`、`download_file`、`list_dir`、`glob`、`grep`、`update_file` 等 9 个抽象方法 [sandbox.py:18-112](../backend/packages/harness/deerflow/sandbox/sandbox.py#L18-L112)。
+- 第一层 `Sandbox` 抽象类定义 Agent 可见的能力面:`execute_command`、`read_file`、`write_file`、`download_file`、`list_dir`、`glob`、`grep`、`update_file` 共 8 个抽象方法 [sandbox.py:18-112](../backend/packages/harness/deerflow/sandbox/sandbox.py#L18-L112)。
 - 第二层 `SandboxProvider` 管生命周期:`acquire(thread_id)` / `get(sandbox_id)` / `release(sandbox_id)`,并声明 `uses_thread_data_mounts`、`needs_upload_permission_adjustment` 两个能力位 [sandbox_provider.py:9-50](../backend/packages/harness/deerflow/sandbox/sandbox_provider.py#L9-L50)。
 - 第三层 `SandboxBackend` 只管"怎么供给",接口是 `create/destroy/is_alive/discover/list_running`,其中 `list_running` 默认返回空列表——不管容器的后端(如纯远程)无需实现 [backend.py:68-144](../backend/packages/harness/deerflow/community/aio_sandbox/backend.py#L68-L144)。
 

@@ -7,7 +7,7 @@
 
 **Q1.1(基础)** 这套 IM 多平台接入的整体架构是什么样的?Channel、MessageBus、ChannelManager 各自承担什么角色?
 
-**参考回答**:三层结构,职责严格单向。Channel 是平台适配层,ABC 只定义 `start/stop/send` 三个抽象方法,外加 `send_file/receive_file` 两个可选钩子([base.py:47-71](../backend/app/channels/base.py#L47-L71))。MessageBus 是进程内 pub/sub 中枢,入站用一个无界 `asyncio.Queue`,出站用 listener 回调列表([message_bus.py:142-144](../backend/app/channels/message_bus.py#L142-L144))。
+**参考回答**:三层结构,职责严格单向。Channel 是平台适配层,ABC 只定义 `start/stop/send` 三个抽象方法,外加 `send_file/receive_file` 两个可选钩子([base.py:47-71](../backend/app/channels/base.py#L47-L71) 覆盖 start/stop/send/send_file;`receive_file` 默认实现单独在 [base.py:181-185](../backend/app/channels/base.py#L181-L185))。MessageBus 是进程内 pub/sub 中枢,入站用一个无界 `asyncio.Queue`,出站用 listener 回调列表([message_bus.py:142-144](../backend/app/channels/message_bus.py#L142-L144))。
 
 ChannelManager 是唯一的消费者/调度器:从队列取消息、通过 langgraph_sdk 调 Gateway 创建 thread 和 run,再把响应 publish 回 bus([manager.py:775-781](../backend/app/channels/manager.py#L775-L781))。ChannelService 按 `config.yaml` 的 `channels` 段懒加载各平台类并启动,注册表是"名字 → import path"的字符串映射([service.py:23-31](../backend/app/channels/service.py#L23-L31))。
 
